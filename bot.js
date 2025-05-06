@@ -131,17 +131,35 @@ app.post('/send-to-user', async (req, res) => {
     }
 });
 
-// ✅ MESAJI YANITLA
+// WhatsApp bot tarafında şu kodları kontrol edin:
 app.post('/reply-to-message', async (req, res) => {
+    console.log("💌 /reply-to-message isteği alındı:", req.body);
+
     const { phoneNumber, message, quotedMsgId, file } = req.body;
+
+    if (!phoneNumber || !message) {
+        return res.status(400).json({
+            error: '❌ Telefon numarası ve mesaj gerekli',
+            receivedData: req.body
+        });
+    }
 
     try {
         const chats = await client.getChats();
-        const chat = chats.find(chat => chat.id._serialized === phoneNumber || chat.name === phoneNumber);
+        const chat = chats.find(chat =>
+            chat.id._serialized === phoneNumber ||
+            chat.name === phoneNumber
+        );
 
         if (!chat) {
-            return res.status(404).json({ error: '❌ Kişi veya grup bulunamadı' });
+            console.log(`❓ "${phoneNumber}" ile ilgili sohbet bulunamadı`);
+            return res.status(404).json({
+                error: '❌ Kişi veya grup bulunamadı',
+                phoneNumber
+            });
         }
+
+        console.log(`✅ Sohbet bulundu: ${chat.name || chat.id._serialized}`);
 
         // Mesajı yanıtla
         await client.sendMessage(chat.id._serialized, message, {
@@ -156,10 +174,13 @@ app.post('/reply-to-message', async (req, res) => {
             });
         }
 
-        res.json({ success: true, message: '✅ Mesaj yanıtlandı ve dosya gönderildi (varsa).' });
+        res.json({ success: true, message: '✅ Mesaj yanıtlandı' });
     } catch (err) {
         console.error('❌ Yanıt mesajı hatası:', err);
-        res.status(500).json({ error: 'Mesaj yanıtlanamadı', detail: err.message });
+        res.status(500).json({
+            error: 'Mesaj yanıtlanamadı',
+            detail: err.message
+        });
     }
 });
 
