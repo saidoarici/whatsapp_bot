@@ -132,7 +132,7 @@ app.post('/send-to-user', async (req, res) => {
 });
 
 // ✅ MESAJI YANITLA
-app.post('/reply-to-message', async (req, res) => {
+app.post('/reply_to_message', async (req, res) => {
     const { phoneNumber, message, quotedMsgId, file } = req.body;
 
     try {
