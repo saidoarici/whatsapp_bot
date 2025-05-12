@@ -22,7 +22,7 @@ client.on('ready', () => {
     console.log('✅ Bot başarıyla bağlandı!');
 });
 
-const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting'];
+const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting', 'BOT TEST'];
 const allowedNumbers = ['905431205525@c.us', '905319231182@c.us'];
 
 client.on('message', async msg => {

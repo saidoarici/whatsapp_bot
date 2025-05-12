@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 const { MessageMedia } = require('whatsapp-web.js');
 
 module.exports = function setupMessageHandler(client) {
-    const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting'];
+    const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting', 'BOT TEST'];
     const allowedNumbers = ['905431205525@c.us', '905319231182@c.us'];
 
     client.on('message', async msg => {
