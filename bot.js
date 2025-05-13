@@ -147,35 +147,60 @@ app.post('/send-to-user', async (req, res) => {
 app.post('/reply-to-message', async (req, res) => {
     const { phoneNumber, message, quotedMsgId, file, returnMsgId } = req.body;
 
+    // Gelen istek detaylarını logla
+    console.log("📥 [İSTEK ALINDI] /reply-to-message");
+    console.log("👉 phoneNumber:", phoneNumber);
+    console.log("👉 message:", message);
+    console.log("👉 quotedMsgId:", quotedMsgId);
+    console.log("👉 file:", file ? file.filename : "YOK");
+    console.log("👉 returnMsgId:", returnMsgId);
+
     try {
         const chats = await client.getChats();
         const chat = chats.find(c => c.id._serialized === phoneNumber || c.name === phoneNumber);
-        if (!chat) return res.status(404).json({ error: '❌ Alıcı bulunamadı' });
 
-        // Mesajı gönder ve yanıtı al
+        if (!chat) {
+            console.error("❌ HATA: Alıcı bulunamadı →", phoneNumber);
+            return res.status(404).json({ error: '❌ Alıcı bulunamadı' });
+        }
+
         let sentMessage = null;
+
+        // Mesaj gönderimi
         if (message) {
-            sentMessage = await client.sendMessage(chat.id._serialized, message, {
-                quotedMessageId: quotedMsgId
-            });
+            try {
+                sentMessage = await client.sendMessage(chat.id._serialized, message, {
+                    quotedMessageId: quotedMsgId
+                });
+                console.log("✅ Mesaj metni gönderildi:", message);
+            } catch (msgErr) {
+                console.error("❌ Mesaj gönderme hatası:", msgErr);
+            }
         }
 
+        // Dosya gönderimi
         if (file) {
-            const media = new MessageMedia('application/pdf', file.base64, file.filename);
-            sentMessage = await client.sendMessage(chat.id._serialized, media, {
-                quotedMessageId: quotedMsgId
-            });
+            try {
+                const media = new MessageMedia('application/pdf', file.base64, file.filename);
+                sentMessage = await client.sendMessage(chat.id._serialized, media, {
+                    quotedMessageId: quotedMsgId
+                });
+                console.log("📎 Dosya gönderildi:", file.filename);
+            } catch (fileErr) {
+                console.error("❌ Dosya gönderme hatası:", fileErr);
+            }
         }
 
-        // Eğer returnMsgId talep edildiyse ID döndür
-        if (returnMsgId && sentMessage) {
-            return res.json({ success: true, message_id: sentMessage.id._serialized });
-        } else {
-            return res.json({ success: true });
-        }
+        // Yanıtı hazırla ve logla
+        const responsePayload = returnMsgId && sentMessage
+            ? { success: true, message_id: sentMessage.id._serialized }
+            : { success: true };
+
+        console.log("📤 [YANIT GÖNDERİLDİ] /reply-to-message:", responsePayload);
+        return res.json(responsePayload);
 
     } catch (err) {
-        console.error('❌ reply-to-message hatası:', err);
+        console.error('❌ Genel hata (reply-to-message):', err);
         res.status(500).json({ error: 'Yanıt gönderilemedi', detail: err.message });
     }
 });
