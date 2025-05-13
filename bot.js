@@ -205,6 +205,26 @@ app.post('/reply-to-message', async (req, res) => {
     }
 });
 
+// 🌐 Tüm grupları listeleyen yeni rota
+app.get('/get-groups', async (req, res) => {
+    try {
+        const chats = await client.getChats();
+        const groups = chats
+            .filter(chat => chat.isGroup)
+            .map(chat => ({
+                id: chat.id._serialized,
+                name: chat.name
+            }));
+
+        console.log("📋 [GET] /get-groups →", groups.length, "adet grup bulundu.");
+        res.json({ success: true, groups });
+
+    } catch (err) {
+        console.error("❌ Grup listesi alınamadı:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 const PORT = 3500;
 app.listen(PORT, () => {
     console.log(`🌐 HTTP API aktif: http://localhost:${PORT}`);
