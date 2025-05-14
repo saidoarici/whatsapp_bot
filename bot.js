@@ -21,7 +21,7 @@ client.on('ready', () => {
     console.log('✅ WhatsApp bot hazır!');
 });
 
-const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting', 'BOT TEST'];
+const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting', 'BOT TEST', 'SALARY & DEBT'];
 const allowedNumbers = ['905431205525@c.us', '905319231182@c.us'];
 
 client.on('message', async msg => {
