@@ -22,7 +22,7 @@ client.on('ready', () => {
 });
 
 const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting', 'BOT TEST', 'SALARY & DEBT'];
-const allowedNumbers = ['905431205525@c.us', '905319231182@c.us'];
+const allowedNumbers = ['905431205525@c.us', '905319231182@c.us', '905496616695@c.us'];
 
 client.on('message', async msg => {
     const chat = await msg.getChat();
@@ -78,7 +78,7 @@ client.on('message', async msg => {
 
     // Python'a gönder
     try {
-        const response = await fetch('http://127.0.0.1:5000/message', {
+        const response = await fetch('http://127.0.0.1:3000/message', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
