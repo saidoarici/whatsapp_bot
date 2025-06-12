@@ -1,14 +1,23 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const puppeteer = require('puppeteer');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
 const bodyParser = require('body-parser');
 const fetch = require('node-fetch');
+require('dotenv').config();
+const isProd = process.env.NODE_ENV === 'production';
+
+
+const allowedGroupNames = ['Alssata accounting', 'BOT TEST', 'SALARY & DEBT'];
+const allowedNumbers = ['905431205525@c.us', '905319231182@c.us', '905496616695@c.us'];
 
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: puppeteer.executablePath(),
+        defaultViewport: null
     }
 });
 
@@ -19,20 +28,42 @@ client.on('qr', qr => {
 
 client.on('ready', () => {
     console.log('✅ WhatsApp bot hazır!');
+    console.log(`🔗 Bağlı numara: ${client.info?.wid?.user || 'Bilinmiyor'}`);
 });
 
-const allowedGroupNames = ['GENRS-Muhasebe', 'Alssata accounting', 'BOT TEST', 'SALARY & DEBT'];
-const allowedNumbers = ['905431205525@c.us', '905319231182@c.us', '905496616695@c.us'];
+client.on('auth_failure', msg => {
+    console.error('❌ Kimlik doğrulama hatası:', msg);
+});
+
+client.on('disconnected', reason => {
+    console.warn('⚠️ Bot bağlantısı koptu:', reason);
+    process.exit(1);
+});
 
 client.on('message', async msg => {
-    const chat = await msg.getChat();
-    if (chat.isGroup && !allowedGroupNames.includes(chat.name)) return;
+    let chat;
+    try {
+        chat = await msg.getChat();
+    } catch (err) {
+        console.error("❌ Chat alınamadı:", err.message);
+        return;
+    }
+
+    const isProd = process.env.NODE_ENV === 'production';
+
+    if (chat.isGroup && !isProd && !allowedGroupNames.includes(chat.name)) return;
     if (!chat.isGroup && !allowedNumbers.includes(msg.from)) return;
 
-    const text = msg.body.trim();
-    const quoted = msg.hasQuotedMsg ? await msg.getQuotedMessage() : null;
+    let quoted = null;
+    try {
+        if (msg.hasQuotedMsg) {
+            quoted = await msg.getQuotedMessage();
+        }
+    } catch (err) {
+        console.error("❌ Quoted mesaj alınamadı:", err.message);
+    }
 
-    let payload = {
+    const payload = {
         from: msg.from,
         id: msg.id._serialized,
         chat_id: chat.id._serialized,
@@ -46,7 +77,6 @@ client.on('message', async msg => {
         timestamp: msg.timestamp
     };
 
-    // Medya varsa ekle
     if (msg.hasMedia) {
         try {
             const media = await msg.downloadMedia();
@@ -54,31 +84,23 @@ client.on('message', async msg => {
             payload.data = media.data;
             payload.mimetype = media.mimetype;
         } catch (err) {
-            console.error('❌ Medya alınamadı:', err);
+            console.error('❌ Medya alınamadı:', err.message);
         }
     }
 
-    if (msg.hasQuotedMsg) {
-    const quoted = await msg.getQuotedMessage();
-    payload.quoted_msg_id = quoted?.id._serialized || null;
-    payload.quoted_text = quoted?.body || null;
-
-    // 📎 Quoted mesaj PDF ise, her zaman quoted media bilgilerini gönder
-    if (quoted.hasMedia) {
+    if (quoted && quoted.hasMedia) {
         try {
             const quotedMedia = await quoted.downloadMedia();
             payload.quoted_mimetype = quotedMedia.mimetype;
             payload.quoted_data = quotedMedia.data;
             payload.quoted_filename = quotedMedia.filename || 'file.pdf';
         } catch (err) {
-            console.error('❌ Quoted medya alınamadı:', err);
+            console.error('❌ Quoted medya alınamadı:', err.message);
         }
     }
-}
 
-    // Python'a gönder
     try {
-        const response = await fetch('http://127.0.0.1:5000/message', {
+        const response = await fetch('http://127.0.0.1:3000/message', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -91,12 +113,11 @@ client.on('message', async msg => {
             });
         }
     } catch (err) {
-        console.error('❌ Python mesaj işleme hatası:', err);
+        console.error('❌ Python mesaj işleme hatası:', err.message);
     }
 });
 
 client.initialize();
-
 
 // 🌐 HTTP API
 const app = express();
@@ -111,7 +132,7 @@ app.post('/send-to-group', async (req, res) => {
 
         const sentMsg = await client.sendMessage(group.id._serialized, message);
 
-        if (files && files.length > 0) {
+        if (files?.length) {
             for (const file of files) {
                 const media = new MessageMedia('application/pdf', file.base64, file.filename);
                 await client.sendMessage(group.id._serialized, media);
@@ -120,7 +141,7 @@ app.post('/send-to-group', async (req, res) => {
 
         res.json({ success: true, messageId: sentMsg.id._serialized });
     } catch (err) {
-        console.error('❌ Grup mesajı hatası:', err);
+        console.error('❌ Grup mesajı hatası:', err.message);
         res.status(500).json({ error: 'Mesaj gönderilemedi', detail: err.message });
     }
 });
@@ -130,7 +151,7 @@ app.post('/send-to-user', async (req, res) => {
     try {
         const sentMsg = await client.sendMessage(phoneNumber, message);
 
-        if (files && files.length > 0) {
+        if (files?.length) {
             for (const file of files) {
                 const media = new MessageMedia('application/pdf', file.base64, file.filename);
                 await client.sendMessage(phoneNumber, media);
@@ -139,7 +160,7 @@ app.post('/send-to-user', async (req, res) => {
 
         res.json({ success: true, messageId: sentMsg.id._serialized });
     } catch (err) {
-        console.error('❌ Kullanıcı mesajı hatası:', err);
+        console.error('❌ Kullanıcı mesajı hatası:', err.message);
         res.status(500).json({ error: 'Mesaj gönderilemedi', detail: err.message });
     }
 });
@@ -147,7 +168,6 @@ app.post('/send-to-user', async (req, res) => {
 app.post('/reply-to-message', async (req, res) => {
     const { phoneNumber, message, quotedMsgId, file, returnMsgId } = req.body;
 
-    // Gelen istek detaylarını logla
     console.log("📥 [İSTEK ALINDI] /reply-to-message");
     console.log("👉 phoneNumber:", phoneNumber);
     console.log("👉 message:", message);
@@ -159,39 +179,31 @@ app.post('/reply-to-message', async (req, res) => {
         const chats = await client.getChats();
         const chat = chats.find(c => c.id._serialized === phoneNumber || c.name === phoneNumber);
 
-        if (!chat) {
-            console.error("❌ HATA: Alıcı bulunamadı →", phoneNumber);
-            return res.status(404).json({ error: '❌ Alıcı bulunamadı' });
-        }
+        if (!chat) return res.status(404).json({ error: '❌ Alıcı bulunamadı' });
 
         let sentMessage = null;
 
-        // Mesaj gönderimi
         if (message) {
             try {
                 sentMessage = await client.sendMessage(chat.id._serialized, message, {
                     quotedMessageId: quotedMsgId
                 });
-                console.log("✅ Mesaj metni gönderildi:", message);
             } catch (msgErr) {
-                console.error("❌ Mesaj gönderme hatası:", msgErr);
+                console.error("❌ Mesaj gönderme hatası:", msgErr.message);
             }
         }
 
-        // Dosya gönderimi
         if (file) {
             try {
                 const media = new MessageMedia('application/pdf', file.base64, file.filename);
                 sentMessage = await client.sendMessage(chat.id._serialized, media, {
                     quotedMessageId: quotedMsgId
                 });
-                console.log("📎 Dosya gönderildi:", file.filename);
             } catch (fileErr) {
-                console.error("❌ Dosya gönderme hatası:", fileErr);
+                console.error("❌ Dosya gönderme hatası:", fileErr.message);
             }
         }
 
-        // Yanıtı hazırla ve logla
         const responsePayload = returnMsgId && sentMessage
             ? { success: true, message_id: sentMessage.id._serialized }
             : { success: true };
@@ -200,12 +212,11 @@ app.post('/reply-to-message', async (req, res) => {
         return res.json(responsePayload);
 
     } catch (err) {
-        console.error('❌ Genel hata (reply-to-message):', err);
+        console.error('❌ Genel hata (reply-to-message):', err.message);
         res.status(500).json({ error: 'Yanıt gönderilemedi', detail: err.message });
     }
 });
 
-// 🌐 Tüm grupları listeleyen yeni rota
 app.get('/get-groups', async (req, res) => {
     try {
         const chats = await client.getChats();
@@ -220,7 +231,7 @@ app.get('/get-groups', async (req, res) => {
         res.json({ success: true, groups });
 
     } catch (err) {
-        console.error("❌ Grup listesi alınamadı:", err);
+        console.error("❌ Grup listesi alınamadı:", err.message);
         res.status(500).json({ success: false, error: err.message });
     }
 });
