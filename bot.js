@@ -8,6 +8,22 @@ require('dotenv').config();
 const isProd = process.env.NODE_ENV === 'production';
 
 
+// ✅ Puppeteer çakışmalarını engelle → SingletonLock dosyasını güvenle sil
+const fs = require('fs');
+const path = require('path');
+
+const sessionDir = path.join(__dirname, '.wwebjs_auth', 'session');
+const lockPath = path.join(sessionDir, 'SingletonLock');
+
+if (fs.existsSync(sessionDir) && fs.existsSync(lockPath)) {
+    try {
+        fs.unlinkSync(lockPath);
+        console.log("🧹 SingletonLock dosyası başarıyla silindi.");
+    } catch (err) {
+        console.error("❌ SingletonLock silinemedi:", err.message);
+    }
+}
+
 const allowedGroupNames = ['Alssata accounting', 'BOT TEST', 'SALARY & DEBT'];
 const allowedNumbers = ['905431205525@c.us', '905319231182@c.us', '905496616695@c.us'];
 
@@ -100,7 +116,7 @@ client.on('message', async msg => {
     }
 
     try {
-        const response = await fetch('http://127.0.0.1:5000/message', {
+        const response = await fetch('http://127.0.0.1:3000/message', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
