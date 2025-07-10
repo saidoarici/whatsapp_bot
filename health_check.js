@@ -29,7 +29,7 @@ async function checkAndRestart() {
         await sendMessage(ALERT_NUMBER, '⚠️ WhatsApp bot bağlantısı KAPANDI. PM2 ile yeniden başlatılıyor...');
 
         try {
-            execSync('pm2 restart whatsapp');
+            execSync('pm2 restart whatsapp-bot');
             console.log('🔄 PM2 ile bot yeniden başlatıldı.');
 
             await sendMessage(ALERT_NUMBER, '✅ WhatsApp bot yeniden başlatıldı ve bağlantı sağlandı.');
