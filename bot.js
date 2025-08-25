@@ -131,7 +131,7 @@ client.on('message', async msg => {
 
     try {
         // Python servisine aktar (senin kodunda 3000)
-        const response = await fetch('http://127.0.0.1:3000/message', {
+        const response = await fetch('http://127.0.0.1:5000/message', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
