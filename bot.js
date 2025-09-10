@@ -5,12 +5,19 @@ const qrcode = require('qrcode-terminal');
 const express = require('express');
 const bodyParser = require('body-parser');
 const fetch = require('node-fetch');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const isProd = process.env.NODE_ENV === 'production';
 
-const allowedGroupNames = ['Alssata accounting', 'BOT TEST', 'SALARY & DEBT'];
-const allowedNumbers = ['905431205525@c.us', '905319231182@c.us', '905496616695@c.us'];
+// --- Güvenli env tabanlı izin listeleri (boşsa eski varsayılanlara düşer) ---
+const allowedGroupNames =
+  (process.env.ALLOWED_GROUPS || 'Alssata accounting,BOT TEST,SALARY & DEBT')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+const allowedNumbers =
+  (process.env.ALLOWED_NUMBERS || '905431205525@c.us,905319231182@c.us,905496616695@c.us')
+    .split(',').map(s => s.trim()).filter(Boolean);
 
 const client = new Client({
     authStrategy: new LocalAuth(),
@@ -51,6 +58,46 @@ function safeJsonParse(text) {
         return JSON.parse(text);
     } catch {
         return null;
+    }
+}
+
+// --- HMAC helpers (Flask ile birebir uyumlu) ---
+function hmacSign(secret, ts, nonce, rawBodyBuf) {
+    const prefix = Buffer.from(String(ts) + '.' + nonce + '.', 'utf8');
+    const msg = Buffer.concat([prefix, rawBodyBuf]);
+    return crypto.createHmac('sha256', secret).update(msg).digest('hex');
+}
+
+async function postSigned(path, payloadObj, timeoutMs = 10000) {
+    const base = process.env.PY_BACKEND_BASE || 'http://127.0.0.1:3001';
+    const url = base.replace(/\/$/, '') + path;
+
+    const rawBody = Buffer.from(JSON.stringify(payloadObj || {}), 'utf8');
+    const ts = Math.floor(Date.now() / 1000);
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const secret = process.env.BOT_WEBHOOK_SECRET || '';
+    const sig = hmacSign(secret, ts, nonce, rawBody);
+
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Timestamp': String(ts),
+                'X-Nonce': nonce,
+                'X-Signature': sig
+            },
+            body: rawBody,
+            signal: ctrl.signal
+        });
+        const text = await res.text();
+        const json = (() => { try { return JSON.parse(text); } catch { return {}; } })();
+        return { ok: res.ok, status: res.status, text, json };
+    } finally {
+        clearTimeout(to);
     }
 }
 
@@ -130,19 +177,13 @@ client.on('message', async msg => {
     }
 
     try {
-        // Python servisine aktar (senin kodunda 3000)
-        const response = await fetch('http://127.0.0.1:5000/message', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-
-        const bodyText = await response.text();
-        const result = safeJsonParse(bodyText) || {};
-        if (!response.ok) {
-            console.error(`❌ Python /message ${response.status}: ${bodyText.slice(0, 500)}`);
+        // Python servisine İMZALI aktar
+        const resp = await postSigned('/message', payload, 15000);
+        if (!resp.ok) {
+            console.error(`❌ Python /message ${resp.status}: ${String(resp.text).slice(0, 500)}`);
             return;
         }
+        const result = resp.json || {};
 
         if (result.reply) {
             try {
@@ -164,12 +205,34 @@ client.initialize();
 const app = express();
 app.use(bodyParser.json({limit: '50mb'}));
 
+// --- API güvenlik middleware'i (IP allowlist + API key) ---
+function clientIp(req) {
+    const xff = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    return xff || req.socket.remoteAddress || '';
+}
+
+const allowlistIPs = (process.env.API_ALLOWLIST || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+function apiGuard(req, res, next) {
+    if (allowlistIPs.length) {
+        const ip = clientIp(req);
+        const ok = allowlistIPs.some(a => a && ip.includes(a));
+        if (!ok) return res.status(403).json({ error: 'forbidden_ip' });
+    }
+    const key = req.headers['x-api-key'];
+    if (!key || key !== (process.env.BOT_API_KEY || '')) {
+        return res.status(401).json({ error: 'unauthorized' });
+    }
+    next();
+}
+
 // Basit sağlık kontrolü
 app.get('/healthz', (_req, res) => {
     res.json({ok: true, time: new Date().toISOString()});
 });
 
-app.post('/send-to-group', async (req, res) => {
+app.post('/send-to-group', apiGuard, async (req, res) => {
     const {groupName, message, files} = req.body;
     if (!groupName || !message) {
         return res.status(400).json({error: '❌ groupName ve message zorunlu'});
@@ -195,7 +258,7 @@ app.post('/send-to-group', async (req, res) => {
     }
 });
 
-app.post('/send-to-user', async (req, res) => {
+app.post('/send-to-user', apiGuard, async (req, res) => {
     const {phoneNumber, message, files} = req.body;
     if (!phoneNumber || !message) {
         return res.status(400).json({error: '❌ phoneNumber ve message zorunlu'});
@@ -218,7 +281,7 @@ app.post('/send-to-user', async (req, res) => {
     }
 });
 
-app.post('/reply-to-message', async (req, res) => {
+app.post('/reply-to-message', apiGuard, async (req, res) => {
     const {phoneNumber, message, file, returnMsgId} = req.body;
     // quotedMessageId ve quotedMsgId her ikisini de destekle
     const quotedMessageId = req.body.quotedMessageId || req.body.quotedMsgId || undefined;
@@ -315,3 +378,11 @@ const PORT = 3500;
 app.listen(PORT, () => {
     console.log(`🌐 HTTP API aktif: http://localhost:${PORT}`);
 });
+
+// --- Graceful shutdown ---
+function shutdown() {
+    console.log('🛑 Shutting down...');
+    client.destroy().finally(() => process.exit(0));
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
